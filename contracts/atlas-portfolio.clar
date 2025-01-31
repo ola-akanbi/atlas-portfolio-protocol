@@ -79,7 +79,7 @@
     (ok {
         portfolio-id: portfolio-id,
         total-value: total-value,
-        needs-rebalance: (> (- block-height (get last-rebalanced portfolio)) u144)
+        needs-rebalance: (> (- stacks-block-height (get last-rebalanced portfolio)) u144)
     }))
 )
 
@@ -151,8 +151,8 @@
     (map-set Portfolios portfolio-id
         {
             owner: tx-sender,
-            created-at: block-height,
-            last-rebalanced: block-height,
+            created-at: stacks-block-height,
+            last-rebalanced: stacks-block-height,
             total-value: u0,
             active: true,
             token-count: token-count
@@ -182,4 +182,48 @@
     ;; Increment counter
     (var-set portfolio-counter portfolio-id)
     (ok portfolio-id))
+)
+
+(define-public (rebalance-portfolio (portfolio-id uint))
+    (let (
+        (portfolio (unwrap! (get-portfolio portfolio-id) ERR-INVALID-PORTFOLIO))
+    )
+    (asserts! (is-eq tx-sender (get owner portfolio)) ERR-NOT-AUTHORIZED)
+    (asserts! (get active portfolio) ERR-INVALID-PORTFOLIO)
+
+    ;; Update last rebalanced timestamp
+    (map-set Portfolios portfolio-id
+        (merge portfolio {last-rebalanced: stacks-block-height})
+    )
+
+    (ok true))
+)
+
+(define-public (update-portfolio-allocation
+    (portfolio-id uint)
+    (token-id uint)
+    (new-percentage uint))
+    (let (
+        (portfolio (unwrap! (get-portfolio portfolio-id) ERR-INVALID-PORTFOLIO))
+        (asset (unwrap! (get-portfolio-asset portfolio-id token-id) ERR-INVALID-TOKEN))
+    )
+    (asserts! (is-eq tx-sender (get owner portfolio)) ERR-NOT-AUTHORIZED)
+    (asserts! (validate-percentage new-percentage) ERR-INVALID-PERCENTAGE)
+    (asserts! (validate-token-id portfolio-id token-id) ERR-INVALID-TOKEN-ID)
+
+    (map-set PortfolioAssets
+        {portfolio-id: portfolio-id, token-id: token-id}
+        (merge asset {target-percentage: new-percentage})
+    )
+
+    (ok true))
+)
+
+;; Contract Initialization
+(define-public (initialize (new-owner principal))
+    (begin
+        (asserts! (is-eq tx-sender (var-get protocol-owner)) ERR-NOT-AUTHORIZED)
+        (asserts! (not (is-eq new-owner tx-sender)) ERR-NOT-AUTHORIZED)
+        (var-set protocol-owner new-owner)
+        (ok true))
 )
